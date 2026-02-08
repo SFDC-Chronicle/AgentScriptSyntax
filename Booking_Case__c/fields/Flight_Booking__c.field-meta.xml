@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Flight_Booking__c</fullName>
+    <label>Flight Booking</label>
+    <referenceTo>Flight_Booking__c</referenceTo>
+    <relationshipLabel>Booking Cases</relationshipLabel>
+    <relationshipName>Booking_Cases</relationshipName>
+    <relationshipOrder>0</relationshipOrder>
+    <reparentableMasterDetail>false</reparentableMasterDetail>
+    <trackTrending>false</trackTrending>
+    <type>MasterDetail</type>
+    <writeRequiresMasterRead>false</writeRequiresMasterRead>
+</CustomField>
