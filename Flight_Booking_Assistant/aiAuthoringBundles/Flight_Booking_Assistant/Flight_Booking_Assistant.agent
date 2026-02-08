@@ -1,0 +1,225 @@
+system:
+    instructions: "You are a Flight Booking AI Agent of SFDCChronicle Airways. You will help customer on booking a flight, cancel a flight and providing information about a booking. Be friendly and personalized. Always refer to contacts by name when you know it."
+
+    messages:
+        welcome: "Hi, I'm an Flight Booking AI assistant. How can I help you?"
+        error: "Sorry, it looks like something has gone wrong."
+
+config:
+    developer_name: "Flight_Booking_Assistant"
+    default_agent_user: "helloworld@00dgk000008htl333969094.ext"
+    agent_label: "Flight Booking Assistant"
+    description: "Handle Creation, Cancelation of flight booking details and provide the details of booked flight."
+
+variables:
+    outofbusinesshours: mutable boolean
+        description: "This variable will store whether the time is out of business hours or not"
+    bookingno: mutable string
+        description: "This variable will store the flight booking number"
+    refundamount: mutable number
+        description: "This variable will store Refunded Amount once user cancel a booking"
+    bookingid: mutable string
+        description: "This variable will store Booking Id"    
+    emaildetails: mutable string
+        description: "This variable will store user email address used for booking"
+    bookingdetails: mutable object
+        description: "This variable will store all the details of booked flight"
+    casenumber: mutable string
+        description: "Case created in of business hours"
+    iscalledfromcancel: mutable boolean = False
+        description: "This variable will store whether the execution started from cancel booking topic or not"
+    traveldate: mutable date
+        description: "This variable will store date of travel"
+    priortymember: mutable boolean
+        description: "This variable will store whether user is priority member or not"
+    bookingprice: mutable number
+        description: "This variable will store the price of the flight ticket"
+    daysbetweencount: mutable number
+        description: "This variable will store the days count between travel start date and today's date"    
+
+language:
+    default_locale: "en_US"
+    additional_locales: ""
+
+start_agent topic_selector:
+    label: "Topic Selector"
+    description: "Welcome the user and determine the appropriate topic based on user input"
+
+    reasoning:
+        instructions: ->
+            | Select the best tool to call based on conversation history and user's intent.
+        
+        actions:
+         get_business_hours: @utils.transition to @topic.get_business_hours
+            description: "Get the business hours of SFDCChronicle Airways"
+        
+         fetch_booking_details: @utils.transition to @topic.fetch_booking_details
+            description: "Get the booking details"
+        
+         cancel_booking: @utils.transition to @topic.cancel_booking
+            description: "Cancel the already booked flight as per user request"
+        
+         create_booking: @utils.transition to @topic.create_booking
+            description: "Book flight ticket as per user request"
+       
+topic get_business_hours:
+    label: "Get Business Hours"
+    description: "Get the business hours of SFDCChronicle Airways"
+
+    reasoning:
+      instructions: ->
+         | The business hours is from Monday to Saturday 8 AM CST to 12 AM CST and in Sunday 9 AM CST to 9PM CST.
+            If a user wants to do perform any task check whether its within business hours or not.
+            If not within business hours set {!@variables.outofbusinesshours} as true
+
+topic fetch_booking_details:
+    label: "Fetch Flight Booking Details"
+    description: "Fetch Flight Booking Details"
+
+    reasoning:
+        instructions: ->
+            | Ask for the bookingno or email address if you donot have already.
+                - Proceed with {!@actions.get_booking_details}                
+
+        actions:
+            get_booking_details: @actions.get_booking_details
+                with bookingno = ...
+                with emaildetails = ...
+                set @variables.bookingid = @outputs.bookingid
+                set @variables.bookingdetails = @outputs.bookingdetails
+                set @variables.daysbetweencount = @outputs.daysbetweencount
+    
+    after_reasoning:
+        if @variables.bookingdetails != None and @variables.bookingdetails.data != None:
+            set @variables.traveldate = @variables.bookingdetails.data.Travel_Start_Date__c
+            set @variables.priortymember = @variables.bookingdetails.data.Priority_Member__c
+            set @variables.bookingprice = @variables.bookingdetails.data.Price__c
+
+        if @variables.iscalledfromcancel == True and @variables.bookingid != "" and @variables.bookingid != None:
+            transition to @topic.cancel_booking
+
+    actions:
+        get_booking_details:
+            inputs:
+                bookingno: string
+                    description: "Flight Booking Number"
+                    label: "bookingno"
+                    is_required: False
+                    is_user_input: False
+                    complex_data_type_name: "lightning__textType"
+                emaildetails: string
+                    description: "Email provided in flight details"
+                    label: "emaildetails"
+                    is_required: False
+                    is_user_input: False
+                    complex_data_type_name: "lightning__textType"
+            outputs:
+                bookingid: string
+                    description: "Flight Booking Salesforce Id"
+                    label: "bookingid"
+                    is_used_by_planner: True
+
+                bookingdetails: object
+                    description: "Flight Booking Salesforce Id"
+                    label: "bookingid"
+                    complex_data_type_name: "lightning__recordInfoType"
+                    is_used_by_planner: True
+                
+                daysbetweencount: number
+                    description: "Store the days count between travel start date and today's date"
+                    label:"daysbetweencount"
+                    is_used_by_planner: True
+                
+            target: "flow://Get_Booking_Details_Demo"
+            label: "Get Booking Details Demo"
+            require_user_confirmation: False
+            include_in_progress_indicator: True
+            progress_indicator_message: "Retrieving Flight Details"
+
+topic cancel_booking:
+    label: "Cancel Flight Booking"
+    description: "Cancel the already booked flight"
+    
+    reasoning:
+      instructions: ->
+         if @variables.iscalledfromcancel == False:
+            set @variables.iscalledfromcancel = True
+        
+         if @variables.bookingid != "" and @variables.bookingid != None:
+            run @actions.cancel_booked_flight
+                with bookingid = @variables.bookingid
+                with priortymember = @variables.priortymember
+                with bookingprice = @variables.bookingprice
+                with daysbetweencount = @variables.daysbetweencount
+                set @variables.refundamount = @outputs.refundedamount
+                set @variables.casenumber = @outputs.casenumber
+         else:
+            transition to @topic.fetch_booking_details
+        
+         if @variables.casenumber != None:
+           |Inform the user about the case and refund details. 
+            - A case {!@variables.casenumber} has been created for you to process the refund. You will receive a refund amount of {!@variables.refundamount}
+        
+      actions:
+        tool_fetch_booking_details: @topic.fetch_booking_details
+            description:"This will fetch the details of flight that has been booked based on bookingno or email address"
+        
+        #if we write the below tool again in actions after we write it in reasoning, it will call cancel_booked_flight twice and the apex will execute twice. We can uncomment the below code and check that in the Trace section.
+        #cancel_booked_flight: @actions.cancel_booked_flight
+            #with bookingid = @variables.bookingid
+            #with priortymember = @variables.priortymember
+            #with bookingprice = @variables.bookingprice
+            #with daysbetweencount = @variables.daysbetweencount
+            #set @variables.refundamount = @outputs.refundedamount
+            #set @variables.casenumber = @outputs.casenumber
+    
+    actions:
+        cancel_booked_flight:
+            inputs:
+                bookingid: string
+                    description: "Flight Booking Salesforce Id"
+                    label: "bookingid"
+                    is_required: False
+                    is_user_input: False
+                    complex_data_type_name: "lightning__textType"
+                priortymember: boolean
+                    description: "Whether a user is priority member or not"
+                    label: "priortymember"
+                    is_required: False
+                    is_user_input: False
+                bookingprice: number
+                    description: "Booking price"
+                    label: "bookingprice"
+                    is_required: False
+                    is_user_input: False
+                daysbetweencount: number
+                    description: "store the days count between travel start date and today's date"
+                    label: "daysbetweencount"
+                    is_required: False
+                    is_user_input: False
+            outputs:
+                refundedamount: number
+                    description: "Amount that will be refunded"
+                    label: "refundedamount"
+                    is_used_by_planner: True
+                    is_displayable: True
+                casenumber: string
+                    description: "Case Number"
+                    label: "casenumber"
+                    is_used_by_planner: True
+                    is_displayable: True
+
+            target: "apex://CancelFlightBooking"
+            label: "Cancel Flight Booking"
+            require_user_confirmation: False
+            include_in_progress_indicator: True
+            progress_indicator_message: "Cancel Flight Booking"
+    
+topic create_booking:
+    label: "Create/Book a flight"
+    description: "Create/Book a flight ticket"
+    
+    reasoning:
+      instructions: ->
+        | This will show the available flights.
+         - Once user confirms and provide the passenger details it will book the flight ticket.
